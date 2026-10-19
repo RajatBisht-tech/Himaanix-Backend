@@ -73,12 +73,18 @@ app.use(
 // ROOT ROUTE
 // ---------------------------------------------
 
+
 app.use("/api", async (req, res, next) => {
   try {
     await connectDB();
     next();
   } catch (error) {
-    console.error("MongoDB connection failed:", error.message);
+    console.error("MongoDB connection failed:", {
+      name: error.name,
+      message: error.message,
+      reason: error.reason?.message,
+      code: error.code,
+    });
 
     return res.status(503).json({
       success: false,
@@ -86,6 +92,7 @@ app.use("/api", async (req, res, next) => {
     });
   }
 });
+
 
 app.get("/", (req, res) => {
   res.status(200).json({
