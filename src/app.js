@@ -1,4 +1,3 @@
-
 import express from "express";
 import cors from "cors";
 
@@ -18,23 +17,33 @@ import {
 const app = express();
 
 // ---------------------------------------------
+// SECURITY
+// ---------------------------------------------
+
+app.disable("x-powered-by");
+
+// ---------------------------------------------
 // CORS CONFIGURATION
 // ---------------------------------------------
 
+const defaultOrigins = [
+  "http://localhost:5173",
+  "https://himaanix.com",
+  "https://www.himaanix.com",
+];
+
 const allowedOrigins = (
-  process.env.FRONTEND_URL ||
-  "http://localhost:5173,https://himaanix.com,https://www.himaanix.com"
+  process.env.FRONTEND_URL || defaultOrigins.join(",")
 )
   .split(",")
   .map((origin) => origin.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
-app.disable("x-powered-by");
-
 app.use(
   cors({
     origin(origin, callback) {
-      // Allow requests without an Origin header.
+      // Allow requests without an Origin header, such as
+      // server-to-server requests and certain API tools.
       if (!origin) {
         return callback(null, true);
       }
@@ -45,12 +54,24 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(
-        new Error(`Origin not allowed by CORS: ${origin}`)
-      );
+      // Do not throw an error that masks the underlying API response.
+      return callback(null, false);
     },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
+
     optionsSuccessStatus: 204,
   })
 );
