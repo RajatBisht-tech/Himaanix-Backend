@@ -1,3 +1,4 @@
+
 import express from "express";
 import cors from "cors";
 
@@ -26,38 +27,14 @@ app.disable("x-powered-by");
 // CORS CONFIGURATION
 // ---------------------------------------------
 
-const defaultOrigins = [
-  "http://localhost:5173",
-  "https://himaanix.com",
+const allowedOrigins = [
   "https://www.himaanix.com",
+  "http://localhost:5173",
 ];
-
-const allowedOrigins = (
-  process.env.FRONTEND_URL || defaultOrigins.join(",")
-)
-  .split(",")
-  .map((origin) => origin.trim().replace(/\/$/, ""))
-  .filter(Boolean);
 
 app.use(
   cors({
-    origin(origin, callback) {
-      // Allow requests without an Origin header, such as
-      // server-to-server requests and certain API tools.
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      const normalizedOrigin = origin.replace(/\/$/, "");
-
-      if (allowedOrigins.includes(normalizedOrigin)) {
-        return callback(null, true);
-      }
-
-      // Do not throw an error that masks the underlying API response.
-      return callback(null, false);
-    },
-
+    origin: allowedOrigins,
     methods: [
       "GET",
       "POST",
@@ -66,12 +43,10 @@ app.use(
       "DELETE",
       "OPTIONS",
     ],
-
     allowedHeaders: [
       "Content-Type",
       "Authorization",
     ],
-
     optionsSuccessStatus: 204,
   })
 );
@@ -81,7 +56,12 @@ app.use(
 // ---------------------------------------------
 
 app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "1mb",
+  })
+);
 
 // ---------------------------------------------
 // ROOT ROUTE
