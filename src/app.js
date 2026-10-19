@@ -12,7 +12,6 @@ import reviewRoutes from "./routes/reviewRoutes.js";
 
 import {
   notFound,
-  errorHandler,
 } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -24,7 +23,7 @@ const app = express();
 app.disable("x-powered-by");
 
 // ---------------------------------------------
-// CORS CONFIGURATION - ALLOW ALL ORIGINS
+// CORS - ALLOW ALL ORIGINS
 // ---------------------------------------------
 
 app.use(
@@ -45,6 +44,17 @@ app.use(
     optionsSuccessStatus: 204,
   })
 );
+
+// ---------------------------------------------
+// REQUEST LOGGING
+// ---------------------------------------------
+
+app.use((req, res, next) => {
+  console.log(
+    `[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`
+  );
+  next();
+});
 
 // ---------------------------------------------
 // BODY PARSERS
@@ -113,6 +123,28 @@ app.use(notFound);
 // GLOBAL ERROR HANDLER
 // ---------------------------------------------
 
-app.use(errorHandler);
+app.use((err, req, res, next) => {
+  console.error("API Error:", {
+    method: req.method,
+    url: req.originalUrl,
+    message: err.message,
+    stack: err.stack,
+  });
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const statusCode =
+    err.statusCode || err.status || 500;
+
+  return res.status(statusCode).json({
+    success: false,
+    message:
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err.message || "Internal server error",
+  });
+});
 
 export default app;
