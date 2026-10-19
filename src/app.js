@@ -1,6 +1,7 @@
 
 import express from "express";
 import cors from "cors";
+
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
@@ -8,13 +9,24 @@ import cartRoutes from "./routes/cartRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
-import { notFound, errorHandler } from "./middleware/errorHandler.js";
+
+import {
+  notFound,
+  errorHandler,
+} from "./middleware/errorHandler.js";
 
 const app = express();
 
-const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
+// ---------------------------------------------
+// CORS CONFIGURATION
+// ---------------------------------------------
+
+const allowedOrigins = (
+  process.env.FRONTEND_URL ||
+  "http://localhost:5173,https://himaanix.com,https://www.himaanix.com"
+)
   .split(",")
-  .map((origin) => origin.trim())
+  .map((origin) => origin.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
 app.disable("x-powered-by");
@@ -22,20 +34,38 @@ app.disable("x-powered-by");
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow requests without an Origin header.
+      if (!origin) {
         return callback(null, true);
       }
-      return callback(new Error("Origin is not allowed by CORS"));
+
+      const normalizedOrigin = origin.replace(/\/$/, "");
+
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error(`Origin not allowed by CORS: ${origin}`)
+      );
     },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 204,
   })
 );
+
+// ---------------------------------------------
+// BODY PARSERS
+// ---------------------------------------------
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-// Root route
+// ---------------------------------------------
+// ROOT ROUTE
+// ---------------------------------------------
+
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -53,7 +83,10 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check
+// ---------------------------------------------
+// HEALTH CHECK
+// ---------------------------------------------
+
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -61,7 +94,10 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// API routes
+// ---------------------------------------------
+// API ROUTES
+// ---------------------------------------------
+
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/categories", categoryRoutes);
@@ -70,8 +106,16 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/reviews", reviewRoutes);
 
-// Error handling (keep these last)
+// ---------------------------------------------
+// 404 HANDLER
+// ---------------------------------------------
+
 app.use(notFound);
+
+// ---------------------------------------------
+// GLOBAL ERROR HANDLER
+// ---------------------------------------------
+
 app.use(errorHandler);
 
 export default app;
