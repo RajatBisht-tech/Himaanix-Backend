@@ -1,7 +1,7 @@
 
 import express from "express";
 import cors from "cors";
-
+import connectDB from "./config/database.js";
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
@@ -72,6 +72,20 @@ app.use(
 // ---------------------------------------------
 // ROOT ROUTE
 // ---------------------------------------------
+
+app.use("/api", async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("MongoDB connection failed:", error.message);
+
+    return res.status(503).json({
+      success: false,
+      message: "Database unavailable. Please try again later.",
+    });
+  }
+});
 
 app.get("/", (req, res) => {
   res.status(200).json({
