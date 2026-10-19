@@ -17,27 +17,19 @@ import {
 
 const app = express();
 
+// ---------------------------------------------
+// SECURITY
+// ---------------------------------------------
+
 app.disable("x-powered-by");
 
-// CORS configuration
-const allowedOrigins = [
-  "https://himaanix.com",
-  "https://www.himaanix.com",
-  "http://localhost:5173",
-];
+// ---------------------------------------------
+// CORS CONFIGURATION - ALLOW ALL ORIGINS
+// ---------------------------------------------
 
 app.use(
   cors({
-    origin(origin, callback) {
-      // Allow requests without an Origin header (e.g. Postman/server calls).
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(
-        new Error(`CORS blocked this origin: ${origin}`)
-      );
-    },
+    origin: "*",
     methods: [
       "GET",
       "POST",
@@ -54,8 +46,12 @@ app.use(
   })
 );
 
-// Body parsers
+// ---------------------------------------------
+// BODY PARSERS
+// ---------------------------------------------
+
 app.use(express.json({ limit: "1mb" }));
+
 app.use(
   express.urlencoded({
     extended: true,
@@ -63,7 +59,10 @@ app.use(
   })
 );
 
-// Root route
+// ---------------------------------------------
+// ROOT ROUTE
+// ---------------------------------------------
+
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -81,7 +80,10 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check
+// ---------------------------------------------
+// HEALTH CHECK
+// ---------------------------------------------
+
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -89,7 +91,10 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// API routes
+// ---------------------------------------------
+// API ROUTES
+// ---------------------------------------------
+
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/categories", categoryRoutes);
@@ -98,8 +103,16 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/reviews", reviewRoutes);
 
-// Error handlers
+// ---------------------------------------------
+// 404 HANDLER
+// ---------------------------------------------
+
 app.use(notFound);
+
+// ---------------------------------------------
+// GLOBAL ERROR HANDLER
+// ---------------------------------------------
+
 app.use(errorHandler);
 
 export default app;
