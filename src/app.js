@@ -4,6 +4,8 @@ import cors from "cors";
 import connectDB from "./config/database.js";
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
+import shoeRoutes from "./routes/shoeRoutes.js";
+import watchRoutes from "./routes/watchRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
@@ -103,6 +105,8 @@ app.get("/", (req, res) => {
       "/api/auth",
       "/api/products",
       "/api/categories",
+      "/api/shoes",
+      "/api/watches",
       "/api/cart",
       "/api/orders",
       "/api/coupons",
@@ -128,6 +132,8 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/shoes", shoeRoutes);
+app.use("/api/watches", watchRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
