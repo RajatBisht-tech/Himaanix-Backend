@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const orderSchema = new mongoose.Schema(
@@ -6,7 +5,19 @@ const orderSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+    },
+
+    orderId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
+    transactionId: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
 
     orderNumber: {
@@ -16,11 +27,28 @@ const orderSchema = new mongoose.Schema(
       immutable: true,
     },
 
+    orderSource: {
+      type: String,
+      enum: ["storefront", "gateway"],
+      default: "storefront",
+    },
+
+    customer: {
+      name: { type: String, default: "" },
+      firstName: { type: String, default: "" },
+      lastName: { type: String, default: "" },
+      email: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      ip: { type: String, default: "" },
+      deviceInfo: { type: String, default: "" },
+    },
+
     items: [
       {
         product: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "Product",
+          required: false,
         },
         name: {
           type: String,
@@ -61,13 +89,13 @@ const orderSchema = new mongoose.Schema(
     ],
 
     shippingAddress: {
-      fullName: { type: String, required: true },
-      phone: { type: String, required: true },
-      line1: { type: String, required: true },
+      fullName: { type: String, default: "" },
+      phone: { type: String, default: "" },
+      line1: { type: String, default: "" },
       line2: { type: String, default: "" },
-      city: { type: String, required: true },
-      state: { type: String, required: true },
-      postalCode: { type: String, required: true },
+      city: { type: String, default: "" },
+      state: { type: String, default: "" },
+      postalCode: { type: String, default: "" },
       country: { type: String, default: "India" },
     },
 
@@ -128,7 +156,6 @@ const orderSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: ["cod", "razorpay", "other"],
       default: "cod",
     },
 
@@ -142,12 +169,35 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    provider: {
+      type: String,
+      default: "payu",
+    },
+
+    payuTxnId: { type: String, default: null },
+    payuPaymentId: { type: String, default: null },
+    payuBankRefNum: { type: String, default: null },
+    payuMerchantVpa: { type: String, default: null },
+    payuQrString: { type: String, default: null },
+    payuKey: { type: String, default: null },
+    payuSalt: { type: String, default: null },
+    payuResponse: { type: mongoose.Schema.Types.Mixed, default: null },
+
+    gatewayKey: { type: String, default: null },
+    gatewaySalt: { type: String, default: null },
+    merchantVpa: { type: String, default: null },
+    upiIntent: { type: String, default: null },
+    upiString: { type: String, default: null },
+    paidAt: { type: Date, default: null },
   },
   {
     timestamps: true,
   }
 );
 
-const Order = mongoose.model("Order", orderSchema);
+orderSchema.index({ payuTxnId: 1 });
+
+const Order = mongoose.models.Order || mongoose.model("Order", orderSchema);
 
 export default Order;
