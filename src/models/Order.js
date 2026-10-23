@@ -170,6 +170,11 @@ const orderSchema = new mongoose.Schema(
       default: "",
     },
 
+    gatewayOrderId: {
+      type: String,
+      default: "",
+    },
+
     provider: {
       type: String,
       default: "payu",

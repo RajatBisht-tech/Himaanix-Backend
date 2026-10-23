@@ -12,6 +12,8 @@ import orderRoutes from "./routes/orderRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import payinRoutes from "./routes/payinRoutes.js";
+import checkoutRoutes from "./routes/checkoutRoutes.js";
+import { proxyHostedPayment, renderCashfreeHostedCheckout } from "./controllers/hostedPaymentController.js";
 
 import {
   notFound,
@@ -26,12 +28,24 @@ const app = express();
 app.disable("x-powered-by");
 
 // ---------------------------------------------
-// CORS - ALLOW ALL ORIGINS
+// CORS
 // ---------------------------------------------
+
+const corsOrigins = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
-    origin: "*",
+    origin(origin, callback) {
+      // Allow requests without an Origin header (for example, curl and health checks).
+      if (!origin || corsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Origin not allowed by CORS"));
+    },
     methods: [
       "GET",
       "POST",
@@ -63,7 +77,12 @@ app.use((req, res, next) => {
 // BODY PARSERS
 // ---------------------------------------------
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({
+  limit: "1mb",
+  verify: (req, _res, buffer) => {
+    req.rawBody = buffer.toString("utf8");
+  },
+}));
 
 app.use(
   express.urlencoded({
@@ -127,6 +146,12 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Merchant-facing links generated for a Himaanix gateway use this host, for
+// example http://localhost:5000/pay/SE....  The Payin service owns the actual
+// hosted page and provider redirect, so proxy the complete /pay surface.
+app.get("/pay/:transactionId", renderCashfreeHostedCheckout);
+app.use("/pay", proxyHostedPayment);
+
 // ---------------------------------------------
 // API ROUTES
 // ---------------------------------------------
@@ -138,6 +163,7 @@ app.use("/api/watches", watchRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/payments", checkoutRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/v1/payin", payinRoutes);

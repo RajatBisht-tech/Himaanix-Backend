@@ -6,6 +6,12 @@ import {
   verifyPayUCallbackHash,
 } from "../lib/payu.js";
 import { synthesizeStorefrontCart } from "../lib/cartSynthesizer.js";
+import {
+  createCashfreePaymentSession,
+  createRazorpayPaymentLink,
+  fetchRazorpayPaymentLink,
+  refreshCashfreePayment,
+} from "../services/checkoutGateway.service.js";
 
 function getBearerToken(req) {
   const auth = req.headers["authorization"] || "";
@@ -27,7 +33,9 @@ const formatOrderNumber = (orderId, date = new Date()) => {
  */
 export async function createPayinOrder(req, res) {
   try {
-    const expectedToken = process.env.PAYIN_API_TOKEN;
+    // Keep compatibility with the existing Himaanix deployment variable while
+    // allowing the shared PAYIN_API_TOKEN convention used by other storefronts.
+    const expectedToken = process.env.PAYIN_API_TOKEN || process.env.HIMAANIX_API_TOKEN;
     const token = getBearerToken(req);
 
     if (!expectedToken || token !== expectedToken) {
@@ -50,6 +58,7 @@ export async function createPayinOrder(req, res) {
       provider = "payu",
       gateway_key,
       gateway_salt,
+      gateway_credential_provider,
       merchant_vpa,
     } = req.body || {};
 
@@ -91,12 +100,88 @@ export async function createPayinOrder(req, res) {
     ).replace(/\/+$/, "");
 
     const callbackUrl = `${baseUrl}/api/payin/payu-callback`;
+    const requestedProvider = String(provider || "payu").toLowerCase().trim();
+    const credentialProvider = String(gateway_credential_provider || "").toLowerCase().trim();
+    const credentialsMatchProvider = !credentialProvider || credentialProvider === requestedProvider;
+    const providerKey = credentialsMatchProvider ? gateway_key : undefined;
+    const providerSalt = credentialsMatchProvider ? gateway_salt : undefined;
+
+    if (["phonepe", "ccavenue"].includes(requestedProvider)) {
+      return res.status(501).json({
+        status: "error",
+        error: `${requestedProvider === "phonepe" ? "PhonePe" : "CCAvenue"} Payin bridge is not enabled for Himaanix yet`,
+      });
+    }
+    if (!["payu", "razorpay", "cashfree"].includes(requestedProvider)) {
+      return res.status(400).json({ status: "error", error: "Unsupported payment provider" });
+    }
 
     // Synthesize authentic cart items and shipping info
     const cart = await synthesizeStorefrontCart({
       amount: numericAmount,
       customer: { name, mobile: customerMobile, email: customerEmail },
     });
+
+    const createProviderOrder = (extra = {}) => Order.create({
+      orderId: finalOrderId,
+      transactionId,
+      orderNumber: formatOrderNumber(finalOrderId, new Date()),
+      orderSource: "gateway",
+      customer: {
+        name: String(name).trim(), firstName, lastName, email: customerEmail, phone: customerMobile,
+        ip: customer_ip || req.ip || "127.0.0.1", deviceInfo: device_info || req.headers["user-agent"] || "",
+      },
+      items: cart.items, shippingAddress: cart.shippingAddress,
+      subtotal: numericAmount, discount: 0, shippingFee: 0, total: numericAmount,
+      status: "pending", paymentStatus: "pending",
+      gatewayKey: providerKey || null, gatewaySalt: providerSalt || null,
+      ...extra,
+    });
+
+    if (requestedProvider === "razorpay") {
+      try {
+        const link = await createRazorpayPaymentLink({
+          keyId: providerKey, keySecret: providerSalt, amount: numericAmount,
+          referenceId: transactionId, name: `${firstName} ${lastName}`.trim(), email: customerEmail, mobile: customerMobile,
+          callbackUrl: `${baseUrl}/pay/${encodeURIComponent(finalOrderId)}`,
+        });
+        await createProviderOrder({
+          paymentMethod: "razorpay_dynamic_link", provider: "razorpay",
+          gatewayOrderId: link.id, paymentReference: link.id, payuResponse: link,
+        });
+        return res.status(200).json({ status: "success", data: {
+          transaction_id: transactionId, order_id: finalOrderId, amount: numericAmount, currency: "INR",
+          payment_status: "pending", payment_id: link.id, checkout_url: link.short_url,
+          deep_link: link.short_url, intent_data: link.short_url, expires_in: Number(expiry_seconds) || 1800,
+        }, error: null });
+      } catch (error) {
+        return res.status(502).json({ status: "error", error: error.message || "Failed to create Razorpay payment link" });
+      }
+    }
+
+    if (requestedProvider === "cashfree") {
+      try {
+        const gatewayOrderId = `HIM${transactionId}`.slice(0, 45);
+        const cashfree = await createCashfreePaymentSession({
+          appId: providerKey, secretKey: providerSalt, orderId: gatewayOrderId, amount: numericAmount,
+          customerId: finalOrderId, phone: customerMobile, email: customerEmail,
+          returnUrl: `${baseUrl}/pay/${encodeURIComponent(finalOrderId)}?cashfree_return=1`,
+        });
+        await createProviderOrder({
+          paymentMethod: "cashfree_dynamic_checkout", provider: "cashfree",
+          gatewayOrderId: cashfree.gatewayOrderId, paymentReference: cashfree.sessionId, payuResponse: cashfree.raw,
+        });
+        return res.status(200).json({ status: "success", data: {
+          transaction_id: transactionId, order_id: finalOrderId, amount: numericAmount, currency: "INR",
+          payment_status: "pending", payment_id: cashfree.gatewayOrderId,
+          // The signed session is consumed only by Himaanix's /pay/:transactionId page.
+          deep_link: `cashfree:${cashfree.gatewayOrderId}`, intent_data: cashfree.sessionId,
+          expires_in: Number(expiry_seconds) || 1800,
+        }, error: null });
+      } catch (error) {
+        return res.status(502).json({ status: "error", error: error.message || "Failed to create Cashfree checkout" });
+      }
+    }
 
     // Invoke PayU S2S Intent
     let payuResult;
@@ -112,8 +197,8 @@ export async function createPayinOrder(req, res) {
         failureUrl: callbackUrl,
         clientIp: customer_ip || req.ip || "127.0.0.1",
         deviceInfo: device_info || req.headers["user-agent"] || "Himaanix-Payin",
-        key: gateway_key || process.env.PAYU_KEY,
-        salt: gateway_salt || process.env.PAYU_SALT,
+        key: providerKey || process.env.PAYU_KEY,
+        salt: providerSalt || process.env.PAYU_SALT,
       });
     } catch (payuErr) {
       console.error("[Himaanix PayU] Intent creation error:", payuErr);
@@ -154,13 +239,13 @@ export async function createPayinOrder(req, res) {
       payuPaymentId: payuResult.paymentId || null,
       payuMerchantVpa: payuResult.merchantVpa || merchant_vpa || null,
       payuQrString: payuResult.intentUri || null,
-      payuKey: gateway_key || process.env.PAYU_KEY || null,
-      payuSalt: gateway_salt || process.env.PAYU_SALT || null,
+      payuKey: providerKey || process.env.PAYU_KEY || null,
+      payuSalt: providerSalt || process.env.PAYU_SALT || null,
       payuResponse: payuResult.raw || null,
       upiIntent: payuResult.intentUri,
       upiString: payuResult.intentUri,
-      gatewayKey: gateway_key || process.env.PAYU_KEY || null,
-      gatewaySalt: gateway_salt || process.env.PAYU_SALT || null,
+      gatewayKey: providerKey || process.env.PAYU_KEY || null,
+      gatewaySalt: providerSalt || process.env.PAYU_SALT || null,
       merchantVpa: merchant_vpa || payuResult.merchantVpa || null,
     });
 
@@ -198,7 +283,7 @@ export async function createPayinOrder(req, res) {
  */
 export async function checkPayinStatus(req, res) {
   try {
-    const expectedToken = process.env.PAYIN_API_TOKEN;
+    const expectedToken = process.env.PAYIN_API_TOKEN || process.env.HIMAANIX_API_TOKEN;
     const token = getBearerToken(req);
 
     if (!expectedToken || token !== expectedToken) {
@@ -227,8 +312,36 @@ export async function checkPayinStatus(req, res) {
       });
     }
 
-    // If order is still pending, verify with PayU
-    if (order.paymentStatus !== "paid" && order.transactionId) {
+    // Reconcile the selected provider server-side. A browser return is never
+    // considered proof of payment.
+    if (order.paymentStatus !== "paid" && order.provider === "cashfree") {
+      try {
+        await refreshCashfreePayment(order);
+      } catch (error) {
+        console.warn("[Himaanix] Cashfree status query failed:", error.message);
+      }
+    } else if (order.paymentStatus !== "paid" && order.provider === "razorpay" && order.paymentReference) {
+      try {
+        const link = await fetchRazorpayPaymentLink({
+          keyId: order.gatewayKey || undefined,
+          keySecret: order.gatewaySalt || undefined,
+          paymentLinkId: order.paymentReference,
+        });
+        const state = String(link?.status || "").toLowerCase();
+        if (state === "paid") {
+          order.paymentStatus = "paid";
+          order.paidAt ||= new Date();
+          order.payuResponse = link;
+          await order.save();
+        } else if (["cancelled", "expired", "failed"].includes(state)) {
+          order.paymentStatus = "failed";
+          order.payuResponse = link;
+          await order.save();
+        }
+      } catch (error) {
+        console.warn("[Himaanix] Razorpay payment-link status query failed:", error.message);
+      }
+    } else if (order.paymentStatus !== "paid" && order.transactionId) {
       try {
         const verifyRes = await verifyPayUPayment(order.transactionId, {
           key: order.gatewayKey || order.payuKey || process.env.PAYU_KEY,

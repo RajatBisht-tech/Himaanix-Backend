@@ -2,6 +2,7 @@
 import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
+import { createGatewayCheckout, getAvailablePaymentMethods } from "../services/checkoutGateway.service.js";
 
 const trackingStatusByOrderStatus = {
   pending: "confirmed",
@@ -303,10 +304,17 @@ export const createOrder = async (req, res, next) => {
     });
   }
 
-  if (paymentMethod !== "cod") {
+  const supportedPaymentMethods = ["cod", "razorpay", "phonepe", "payu", "cashfree"];
+  if (!supportedPaymentMethods.includes(paymentMethod)) {
     return res.status(400).json({
       success: false,
-      message: "Only cash on delivery is available right now",
+      message: "Choose a supported payment method",
+    });
+  }
+  if (!getAvailablePaymentMethods()[paymentMethod]) {
+    return res.status(503).json({
+      success: false,
+      message: "That payment method is not configured yet",
     });
   }
 
@@ -474,16 +482,28 @@ export const createOrder = async (req, res, next) => {
       discount: 0,
       shippingFee,
       total: subtotal + shippingFee,
-      paymentMethod: "cod",
+      paymentMethod,
       paymentStatus: "pending",
+      provider: paymentMethod === "cod" ? "cod" : paymentMethod,
       estimatedDelivery: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
       trackingHistory: [{ status: "confirmed", timestamp: new Date() }],
     });
 
+    let payment = null;
+    if (paymentMethod !== "cod") {
+      try {
+        payment = await createGatewayCheckout(order);
+      } catch (error) {
+        await Order.deleteOne({ _id: order._id });
+        throw error;
+      }
+    }
+
     return res.status(201).json({
       success: true,
-      message: "Order placed successfully",
+      message: payment ? "Payment started successfully" : "Order placed successfully",
       order,
+      payment,
     });
   } catch (error) {
     const rollbackResults = await Promise.allSettled(
